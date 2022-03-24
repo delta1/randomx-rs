@@ -23,28 +23,39 @@
 //!
 //! The `randomx-rs` crate provides bindings to the `RandomX` proof-of-work (PoW) system as well
 //! as the functionality to utilize these bindings.
-//!
 mod bindings;
-use bitflags::bitflags;
+use std::{convert::TryFrom, num::TryFromIntError, ptr, sync::Arc};
 
 use bindings::{
-    randomx_alloc_cache, randomx_alloc_dataset, randomx_cache, randomx_calculate_hash,
-    randomx_create_vm, randomx_dataset, randomx_dataset_item_count, randomx_destroy_vm,
-    randomx_get_dataset_memory, randomx_init_cache, randomx_init_dataset, randomx_release_cache,
-    randomx_release_dataset, randomx_vm, randomx_vm_set_cache, randomx_vm_set_dataset,
-    RANDOMX_DATASET_ITEM_SIZE, RANDOMX_HASH_SIZE,
+    randomx_alloc_cache,
+    randomx_alloc_dataset,
+    randomx_cache,
+    randomx_calculate_hash,
+    randomx_create_vm,
+    randomx_dataset,
+    randomx_dataset_item_count,
+    randomx_destroy_vm,
+    randomx_get_dataset_memory,
+    randomx_init_cache,
+    randomx_init_dataset,
+    randomx_release_cache,
+    randomx_release_dataset,
+    randomx_vm,
+    randomx_vm_set_cache,
+    randomx_vm_set_dataset,
+    RANDOMX_DATASET_ITEM_SIZE,
+    RANDOMX_HASH_SIZE,
 };
+use bitflags::bitflags;
+use libc::{c_ulong, c_void};
+use thiserror::Error;
 
 use crate::bindings::{
-    randomx_calculate_hash_first, randomx_calculate_hash_last, randomx_calculate_hash_next,
+    randomx_calculate_hash_first,
+    randomx_calculate_hash_last,
+    randomx_calculate_hash_next,
     randomx_get_flags,
 };
-use libc::{c_ulong, c_void};
-use std::convert::TryFrom;
-use std::num::TryFromIntError;
-use std::ptr;
-use std::sync::Arc;
-use thiserror::Error;
 
 bitflags! {
 /// Indicates to the RandomX library which configuration options to use.
@@ -149,14 +160,10 @@ impl RandomXCache {
         } else {
             let test = unsafe { randomx_alloc_cache(flags.bits) };
             if test.is_null() {
-                Err(RandomXError::CreationError(
-                    "Could not allocate cache".to_string(),
-                ))
+                Err(RandomXError::CreationError("Could not allocate cache".to_string()))
             } else {
                 let inner = RandomXCacheInner { cache_ptr: test };
-                let result = RandomXCache {
-                    inner: Arc::new(inner),
-                };
+                let result = RandomXCache { inner: Arc::new(inner) };
                 let key_ptr = key.as_ptr() as *mut c_void;
                 let key_size = key.len() as usize;
                 unsafe {
@@ -202,29 +209,21 @@ impl RandomXDataset {
     /// `cache` is a cache object.
     ///
     /// `start` is the item number where initialization should start, recommended to pass in 0.
-    pub fn new(
-        flags: RandomXFlag,
-        cache: RandomXCache,
-        start: c_ulong,
-    ) -> Result<RandomXDataset, RandomXError> {
+    pub fn new(flags: RandomXFlag, cache: RandomXCache, start: c_ulong) -> Result<RandomXDataset, RandomXError> {
         let count = u64::from(RANDOMX_DATASET_ITEM_SIZE - 1) - start;
         let test = unsafe { randomx_alloc_dataset(flags.bits) };
         if test.is_null() {
-            Err(RandomXError::CreationError(
-                "Could not allocate dataset".to_string(),
-            ))
+            Err(RandomXError::CreationError("Could not allocate dataset".to_string()))
         } else {
             let inner = RandomXDatasetInner {
                 dataset_ptr: test,
                 dataset_count: count,
                 cache,
             };
-            let result = RandomXDataset {
-                inner: Arc::new(inner),
-            };
-            let item_count = result.count().map_err(|err| {
-                RandomXError::CreationError(format!("Could not get dataset count:{}", err))
-            })?;
+            let result = RandomXDataset { inner: Arc::new(inner) };
+            let item_count = result
+                .count()
+                .map_err(|err| RandomXError::CreationError(format!("Could not get dataset count:{}", err)))?;
             // Mirror the assert checks inside randomx_init_dataset call
             if (start < item_count && count <= item_count) || (start + item_count <= count) {
                 unsafe {
@@ -237,7 +236,10 @@ impl RandomXDataset {
                 }
                 Ok(result)
             } else {
-                let reason = format!("Dataset `start` or `count` was out of bounds: start: {}, count: {}, actual count: {}", start, count, item_count);
+                let reason = format!(
+                    "Dataset `start` or `count` was out of bounds: start: {}, count: {}, actual count: {}",
+                    start, count, item_count
+                );
                 Err(RandomXError::CreationError(reason))
             }
         }
@@ -310,9 +312,7 @@ impl RandomXVM {
     ) -> Result<RandomXVM, RandomXError> {
         let is_full_mem = flags.contains(RandomXFlag::FLAG_FULL_MEM);
         match (cache, dataset) {
-            (None, None) => Err(RandomXError::CreationError(
-                "Failed to allocate VM".to_string(),
-            )),
+            (None, None) => Err(RandomXError::CreationError("Failed to allocate VM".to_string())),
             (None, _) if !is_full_mem => Err(RandomXError::FlagConfigError(
                 "No cache and FLAG_FULL_MEM not set".to_string(),
             )),
@@ -335,7 +335,7 @@ impl RandomXVM {
                     linked_cache: cache,
                     linked_dataset: dataset,
                 })
-            }
+            },
         }
     }
 
@@ -387,9 +387,7 @@ impl RandomXVM {
             }
             // if this failed, arr should still be empty
             if arr == [0; RANDOMX_HASH_SIZE as usize] {
-                Err(RandomXError::Other(
-                    "RandomX calculated hash was empty".to_string(),
-                ))
+                Err(RandomXError::Other("RandomX calculated hash was empty".to_string()))
             } else {
                 let result = arr.to_vec();
                 Ok(result)
@@ -599,7 +597,7 @@ mod tests {
             let vec = vec![0u8; hash.len() as usize];
             assert_ne!(hash, vec);
             assert_ne!(hash, prev_hash);
-            let compare = vm.calculate_hash(inputs[i]).unwrap(); //sanity check
+            let compare = vm.calculate_hash(inputs[i]).unwrap(); // sanity check
             assert_eq!(hash, compare);
             prev_hash = hash;
             i += 1;
@@ -617,13 +615,10 @@ mod tests {
         let dataset = RandomXDataset::new(flags, cache.clone(), 0).unwrap();
         let vm = RandomXVM::new(flags, Some(cache.clone()), Some(dataset.clone())).unwrap();
         let hash = vm.calculate_hash(input.as_bytes()).expect("no data");
-        assert_eq!(
-            hash,
-            [
-                114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83,
-                215, 213, 59, 71, 32, 172, 253, 155, 204, 111, 183, 213, 157, 155
-            ]
-        );
+        assert_eq!(hash, [
+            114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83, 215, 213, 59, 71, 32,
+            172, 253, 155, 204, 111, 183, 213, 157, 155
+        ]);
         drop(vm);
         drop(dataset);
         drop(cache);
@@ -632,13 +627,10 @@ mod tests {
         let dataset1 = RandomXDataset::new(flags, cache1.clone(), 0).unwrap();
         let vm1 = RandomXVM::new(flags, Some(cache1.clone()), Some(dataset1.clone())).unwrap();
         let hash1 = vm1.calculate_hash(input.as_bytes()).expect("no data");
-        assert_eq!(
-            hash1,
-            [
-                114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83,
-                215, 213, 59, 71, 32, 172, 253, 155, 204, 111, 183, 213, 157, 155
-            ]
-        );
+        assert_eq!(hash1, [
+            114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83, 215, 213, 59, 71, 32,
+            172, 253, 155, 204, 111, 183, 213, 157, 155
+        ]);
         drop(vm1);
         drop(dataset1);
         drop(cache1);
@@ -655,13 +647,10 @@ mod tests {
         drop(dataset);
         drop(cache);
         let hash = vm.calculate_hash(input.as_bytes()).expect("no data");
-        assert_eq!(
-            hash,
-            [
-                114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83,
-                215, 213, 59, 71, 32, 172, 253, 155, 204, 111, 183, 213, 157, 155
-            ]
-        );
+        assert_eq!(hash, [
+            114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83, 215, 213, 59, 71, 32,
+            172, 253, 155, 204, 111, 183, 213, 157, 155
+        ]);
         drop(vm);
 
         let cache1 = RandomXCache::new(flags, key.as_bytes()).unwrap();
@@ -670,13 +659,10 @@ mod tests {
         drop(dataset1);
         drop(cache1);
         let hash1 = vm1.calculate_hash(input.as_bytes()).expect("no data");
-        assert_eq!(
-            hash1,
-            [
-                114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83,
-                215, 213, 59, 71, 32, 172, 253, 155, 204, 111, 183, 213, 157, 155
-            ]
-        );
+        assert_eq!(hash1, [
+            114, 81, 192, 5, 165, 242, 107, 100, 184, 77, 37, 129, 52, 203, 217, 227, 65, 83, 215, 213, 59, 71, 32,
+            172, 253, 155, 204, 111, 183, 213, 157, 155
+        ]);
         drop(vm1);
     }
 }

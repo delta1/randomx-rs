@@ -70,11 +70,7 @@ extern "C" {
         input_size: usize,
         output: *mut c_void,
     );
-    pub fn randomx_calculate_hash_first(
-        machine: *mut randomx_vm,
-        input: *const c_void,
-        input_size: usize,
-    );
+    pub fn randomx_calculate_hash_first(machine: *mut randomx_vm, input: *const c_void, input_size: usize);
     pub fn randomx_calculate_hash_next(
         machine: *mut randomx_vm,
         input_next: *const c_void,
@@ -87,11 +83,11 @@ extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{ffi::CString, mem, ptr};
+
     use libc::{c_char, c_uint, c_void};
-    use std::ffi::CString;
-    use std::mem;
-    use std::ptr;
+
+    use super::*;
 
     type ArrType = [c_char; RANDOMX_HASH_SIZE as usize]; // arr_type is the type in C
 
@@ -223,7 +219,7 @@ mod tests {
             vec.push(arr[i as usize] as u8);
             vec2.push(0u8);
         }
-        assert_ne!(vec, vec2); //vec2 is filled with 0
+        assert_ne!(vec, vec2); // vec2 is filled with 0
         unsafe {
             randomx_destroy_vm(vm);
             randomx_release_cache(cache);
@@ -284,7 +280,7 @@ mod tests {
             vec2.push(0u8);
             vec3.push(arr[i as usize] as u8);
         }
-        assert_ne!(vec, vec2); //vec2 is filled with 0
+        assert_ne!(vec, vec2); // vec2 is filled with 0
 
         unsafe {
             randomx_calculate_hash_next(vm, c_input_ptr3, size_input3, output_ptr);
@@ -294,8 +290,8 @@ mod tests {
             vec.push(arr[i as usize] as u8);
             vec2.push(0u8);
         }
-        assert_ne!(vec, vec2); //vec2 is filled with 0
-        assert_ne!(vec, vec3); //vec3 is previous hash
+        assert_ne!(vec, vec2); // vec2 is filled with 0
+        assert_ne!(vec, vec3); // vec3 is previous hash
 
         for i in 0..RANDOMX_HASH_SIZE {
             vec3.push(arr[i as usize] as u8);
@@ -309,8 +305,8 @@ mod tests {
             vec.push(arr[i as usize] as u8);
             vec2.push(0u8);
         }
-        assert_ne!(vec, vec2); //vec2 is filled with 0
-        assert_ne!(vec, vec3); //vec3 is previous hash
+        assert_ne!(vec, vec2); // vec2 is filled with 0
+        assert_ne!(vec, vec3); // vec3 is previous hash
 
         unsafe {
             randomx_destroy_vm(vm);
