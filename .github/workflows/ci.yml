@@ -9,6 +9,10 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
+      - name: randomx git submodule
+        run: |
+          git submodule init
+          git submodule update
       - name: toolchain
         uses: actions-rs/toolchain@v1
         with:
