@@ -21,6 +21,7 @@
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 use std::env;
 use std::fs;
+use std::io::ErrorKind;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -36,7 +37,13 @@ fn main() {
     let build_dir = &project_dir.join("randomx_build");
 
     env::set_current_dir(Path::new(&repo_dir)).unwrap(); //change current path to repo for dependency build
-    let _ = fs::create_dir(&build_dir); // path might exist
+    match fs::create_dir_all(&build_dir) {
+        Ok(_) => (),
+        Err(e) => match e.kind() {
+            ErrorKind::AlreadyExists => (),
+            _ => panic!("{}", e),
+        },
+    }
     env::set_current_dir(build_dir).unwrap();
     let target = env::var("TARGET").unwrap();
     if target.contains("windows") {

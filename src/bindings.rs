@@ -19,7 +19,6 @@
 // SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 // USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-extern crate libc;
 
 use libc::{c_uint, c_ulong, c_void};
 pub const RANDOMX_HASH_SIZE: u32 = 32;
@@ -131,14 +130,7 @@ mod tests {
 
         let dataset = unsafe { randomx_alloc_dataset(flag) };
 
-        unsafe {
-            randomx_init_dataset(
-                dataset,
-                cache,
-                0,
-                (RANDOMX_DATASET_ITEM_SIZE - 1) as c_ulong,
-            )
-        }
+        unsafe { randomx_init_dataset(dataset, cache, 0, u64::from(RANDOMX_DATASET_ITEM_SIZE - 1)) }
 
         assert_ne!(unsafe { randomx_dataset_item_count() }, 0);
 
@@ -173,14 +165,7 @@ mod tests {
             panic!("Failed to re-init vm with new cache");
         }
         let dataset = unsafe { randomx_alloc_dataset(flag) };
-        unsafe {
-            randomx_init_dataset(
-                dataset,
-                cache,
-                0,
-                (RANDOMX_DATASET_ITEM_SIZE - 1) as c_ulong,
-            )
-        }
+        unsafe { randomx_init_dataset(dataset, cache, 0, u64::from(RANDOMX_DATASET_ITEM_SIZE - 1)) }
         vm = unsafe { randomx_create_vm(flag, cache, dataset) };
         if vm.is_null() {
             panic!("Failed to init vm with dataset");

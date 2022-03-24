@@ -25,9 +25,7 @@
 //! as the functionality to utilize these bindings.
 //!
 mod bindings;
-#[macro_use]
-extern crate bitflags;
-extern crate libc;
+use bitflags::bitflags;
 
 use bindings::{
     randomx_alloc_cache, randomx_alloc_dataset, randomx_cache, randomx_calculate_hash,
@@ -42,6 +40,8 @@ use crate::bindings::{
     randomx_get_flags,
 };
 use libc::{c_ulong, c_void};
+use std::convert::TryFrom;
+use std::num::TryFromIntError;
 use std::ptr;
 use std::sync::Arc;
 use thiserror::Error;
@@ -98,13 +98,15 @@ impl Default for RandomXFlag {
 #[derive(Debug, Clone, Error)]
 /// Custom error enum
 pub enum RandomXError {
-    #[error("Problem creating the RandomX object:{0}")]
+    #[error("Problem creating the RandomX object: {0}")]
     CreationError(String),
-    #[error("Problem with configuration flags:{0}")]
+    #[error("Problem with configuration flags: {0}")]
     FlagConfigError(String),
-    #[error("Problem with parameters supplied:{0}")]
+    #[error("Problem with parameters supplied: {0}")]
     ParameterError(String),
-    #[error("Unknown problem running RandomX:{0}")]
+    #[error("Failed to convert Int to usize")]
+    TryFromIntError(#[from] TryFromIntError),
+    #[error("Unknown problem running RandomX: {0}")]
     Other(String),
 }
 
@@ -158,7 +160,6 @@ impl RandomXCache {
                 let key_ptr = key.as_ptr() as *mut c_void;
                 let key_size = key.len() as usize;
                 unsafe {
-                    //no way to check if this fails, c code does not return anything
                     randomx_init_cache(result.inner.cache_ptr, key_ptr, key_size);
                 }
                 Ok(result)
@@ -170,7 +171,6 @@ impl RandomXCache {
 #[derive(Debug)]
 pub struct RandomXDatasetInner {
     dataset_ptr: *mut randomx_dataset,
-    dataset_start: c_ulong,
     dataset_count: c_ulong,
     #[allow(dead_code)]
     cache: RandomXCache,
@@ -207,7 +207,7 @@ impl RandomXDataset {
         cache: RandomXCache,
         start: c_ulong,
     ) -> Result<RandomXDataset, RandomXError> {
-        let count = c_ulong::from(RANDOMX_DATASET_ITEM_SIZE - 1) - start;
+        let count = u64::from(RANDOMX_DATASET_ITEM_SIZE - 1) - start;
         let test = unsafe { randomx_alloc_dataset(flags.bits) };
         if test.is_null() {
             Err(RandomXError::CreationError(
@@ -216,9 +216,8 @@ impl RandomXDataset {
         } else {
             let inner = RandomXDatasetInner {
                 dataset_ptr: test,
-                dataset_start: start,
                 dataset_count: count,
-                cache: cache,
+                cache,
             };
             let result = RandomXDataset {
                 inner: Arc::new(inner),
@@ -227,14 +226,8 @@ impl RandomXDataset {
                 RandomXError::CreationError(format!("Could not get dataset count:{}", err))
             })?;
             // Mirror the assert checks inside randomx_init_dataset call
-            if !((start < (item_count as c_ulong) && count <= (item_count as c_ulong))
-                || (start + (item_count as c_ulong) <= count))
-            {
-                let reason = format!("Dataset `start` or `count` was out of bounds: start:{}, count:{}, actual count:{}", start,count, item_count);
-                Err(RandomXError::CreationError(reason))
-            } else {
+            if (start < item_count && count <= item_count) || (start + item_count <= count) {
                 unsafe {
-                    //no way to check if this fails, c code does not return anything
                     randomx_init_dataset(
                         result.inner.dataset_ptr,
                         result.inner.cache.inner.cache_ptr,
@@ -243,6 +236,9 @@ impl RandomXDataset {
                     );
                 }
                 Ok(result)
+            } else {
+                let reason = format!("Dataset `start` or `count` was out of bounds: start: {}, count: {}, actual count: {}", start, count, item_count);
+                Err(RandomXError::CreationError(reason))
             }
         }
     }
@@ -259,17 +255,13 @@ impl RandomXDataset {
     pub fn get_data(&self) -> Result<Vec<u8>, RandomXError> {
         let memory = unsafe { randomx_get_dataset_memory(self.inner.dataset_ptr) };
         if memory.is_null() {
-            Err(RandomXError::Other(
-                "Could not get dataset memory".to_string(),
-            ))
+            Err(RandomXError::Other("Could not get dataset memory".into()))
         } else {
-            let mut result: Vec<u8> = vec![0u8; self.inner.dataset_count as usize];
+            let count = usize::try_from(self.inner.dataset_count)?;
+            let mut result: Vec<u8> = vec![0u8; count];
+            let n = usize::try_from(self.inner.dataset_count)?;
             unsafe {
-                libc::memcpy(
-                    result.as_mut_ptr() as *mut c_void,
-                    memory,
-                    self.inner.dataset_count as usize,
-                );
+                libc::memcpy(result.as_mut_ptr() as *mut c_void, memory, n);
             }
             Ok(result)
         }
@@ -350,17 +342,16 @@ impl RandomXVM {
     /// Re-initializes the `VM` with a new cache that was initialised without
     /// RandomXFlag::FLAG_FULL_MEM.
     pub fn reinit_cache(&mut self, cache: RandomXCache) -> Result<(), RandomXError> {
-        if !self.flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-            //no way to check if this fails, c code does not return anything
+        if self.flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+            Err(RandomXError::FlagConfigError(
+                "Cannot reinit cache with FLAG_FULL_MEM set".to_string(),
+            ))
+        } else {
             unsafe {
                 randomx_vm_set_cache(self.vm, cache.inner.cache_ptr);
             }
             self.linked_cache = Some(cache);
             Ok(())
-        } else {
-            Err(RandomXError::FlagConfigError(
-                "Cannot reinit cache with FLAG_FULL_MEM set".to_string(),
-            ))
         }
     }
 
@@ -368,7 +359,6 @@ impl RandomXVM {
     /// RandomXFlag::FLAG_FULL_MEM.
     pub fn reinit_dataset(&mut self, dataset: RandomXDataset) -> Result<(), RandomXError> {
         if self.flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-            //no way to check if this fails, c code does not return anything
             unsafe {
                 randomx_vm_set_dataset(self.vm, dataset.inner.dataset_ptr);
             }
@@ -432,7 +422,12 @@ impl RandomXVM {
         // Not len() as last iteration assigns final hash
         let iterations = input.len() + 1;
         for i in 0..iterations {
-            if i != iterations - 1 {
+            if i == iterations - 1 {
+                // For last iteration
+                unsafe {
+                    randomx_calculate_hash_last(self.vm, output_ptr);
+                }
+            } else {
                 if input[i].is_empty() {
                     // Stop calculations
                     if arr != [0; RANDOMX_HASH_SIZE as usize] {
@@ -456,11 +451,6 @@ impl RandomXVM {
                         // For every other iteration
                         randomx_calculate_hash_next(self.vm, input_ptr, size_input, output_ptr);
                     }
-                }
-            } else {
-                // For last iteration
-                unsafe {
-                    randomx_calculate_hash_last(self.vm, output_ptr);
                 }
             }
 
