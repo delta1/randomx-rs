@@ -35,7 +35,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: lints
-          args: clippy --all-targets
+          args: clippy
   build:
     name: build
     runs-on: ubuntu-latest
