@@ -1,3 +1,5 @@
+![CI](https://github.com/tari-project/randomx-rs/actions/workflows/ci.yml/badge.svg)
+
 # RandomX-rs
 
 > Rust bindings to the RandomX proof-of-work (Pow) system
