@@ -25,13 +25,15 @@ get_binaries() {
 
 get_binaries
 
+# echo "files: $files"
+
 # Remove old coverage files
 rm cov_raw/*profraw cov_raw/$NAME.profdata cov_raw/$NAME.lcov cov_raw/$NAME.txt
 
 RUSTFLAGS=$RUSTFLAGS LLVM_PROFILE_FILE=$LLVM_PROFILE_FILE cargo test --tests
 
 cargo profdata -- \
-    merge -sparse ./cov_raw/$NAME-rs-*.profraw -o ./cov_raw/$NAME.profdata
+    merge -sparse ./cov_raw/$NAME*.profraw -o ./cov_raw/$NAME.profdata
 
 cargo cov -- \
     export \

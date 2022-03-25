@@ -1,4 +1,4 @@
-name: Source Coverage
+name: Coverage
 on:
   push:
     branches:

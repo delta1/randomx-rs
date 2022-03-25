@@ -13,3 +13,5 @@ Cargo.lock
 *.iml
 
 cov_raw/
+*.profraw
+coverage_report/
